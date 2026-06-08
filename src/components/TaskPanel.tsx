@@ -241,7 +241,7 @@ function TaskPanel() {
       dataIndex: 'dueDate',
       key: 'dueDate',
       width: 110,
-      render: (d?: number, record: TaskItem) => {
+      render: (d: number | undefined, record: TaskItem) => {
         if (!d) return <span style={{ color: '#bfbfbf' }}>-</span>;
         const isOverdue = record.status !== 'done' && d < Date.now();
         return (

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Menu, Button, App as AntApp } from 'antd';
 import {
   DatabaseOutlined,
@@ -79,15 +79,8 @@ const menuItems: Required<MenuProps>['items'] = [
 
 function App() {
   const [activeWindow, setActiveWindow] = useState<WindowKey>('canvas');
-  const { loadDemoData, nodes, edges } = useLineageStore();
-  const { message } = AntApp.useApp();
-
-  useEffect(() => {
-    if (nodes.length === 0) {
-      loadDemoData();
-      message.success('已加载示例数据');
-    }
-  }, []);
+  const { loadDemoData, clearAll } = useLineageStore();
+  const { message, modal } = AntApp.useApp();
 
   const renderWindow = () => {
     switch (activeWindow) {
@@ -136,10 +129,16 @@ function App() {
             style={{ color: 'white' }}
             icon={<ReloadOutlined />}
             onClick={() => {
-              if (confirm('确定清空所有数据吗？')) {
-                useLineageStore.getState().importData({ nodes: [], edges: [] });
-                message.success('已清空');
-              }
+              modal.confirm({
+                title: '确定清空所有数据？',
+                content: '此操作将清除所有节点、关系、任务和快照，且不可撤销。建议先创建快照备份。',
+                okText: '确认清空',
+                okButtonProps: { danger: true },
+                onOk: () => {
+                  clearAll();
+                  message.success('已清空所有数据');
+                },
+              });
             }}
           >
             清空数据

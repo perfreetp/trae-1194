@@ -591,7 +591,7 @@ ${mdToHTML(md)}
                                 onChange={(e) => setExportFormat(e.target.value)}
                               >
                                 <Space direction="vertical">
-                                  {(Object.keys(iconMap) as any[]).map((k) => (
+                                  {(Object.keys(iconMap) as Array<keyof typeof iconMap>).map((k) => (
                                     <Radio.Button key={k} value={k} style={{ width: '100%', textAlign: 'left', padding: '6px 12px' }}>
                                       <Space>
                                         {iconMap[k]} <strong>{labelMap[k]}</strong>

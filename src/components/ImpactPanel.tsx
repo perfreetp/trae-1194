@@ -66,6 +66,7 @@ function ImpactPanel() {
     getUpstreamNodes,
     getNodeById,
     addTask,
+    getDownstreamFields,
   } = useLineageStore();
   const { message, modal } = AntApp.useApp();
 
@@ -90,17 +91,42 @@ function ImpactPanel() {
     if (reports.length > 0 || critical.length > 0) riskLevel = 'high';
     else if (tables.length >= 3) riskLevel = 'medium';
 
-    const affectedFields = new Map<string, string[]>();
-    if (selectedField) {
-      downstream.forEach((n) => {
-        if (n.fields) {
-          const matched = n.fields.filter((f) =>
-            f.name.toLowerCase().includes(selectedField.toLowerCase()) ||
-            (f.description && f.description.toLowerCase().includes(selectedField.toLowerCase()))
-          ).map((f) => f.name);
-          if (matched.length > 0) affectedFields.set(n.id, matched);
+    const affectedFields = new Map<string, Array<{ field: string; transform?: string; chain: string[] }>>();
+    if (selectedField && selectedNodeId) {
+      const downstreamFieldList = getDownstreamFields(selectedNodeId, selectedField);
+      downstreamFieldList.forEach((df) => {
+        if (!affectedFields.has(df.node.id)) {
+          affectedFields.set(df.node.id, []);
         }
+        const chainEntry = `${selectedNode?.name || ''}.${selectedField}${df.transform ? ` →[${df.transform}]→ ` : ' → '}${df.node.name}.${df.field}`;
+        affectedFields.get(df.node.id)!.push({
+          field: df.field,
+          transform: df.transform,
+          chain: [chainEntry],
+        });
       });
+      if (affectedFields.size > 0) {
+        const fieldNodeIds = new Set(affectedFields.keys());
+        downstream.forEach((n) => {
+          if (!fieldNodeIds.has(n.id) && n.fields) {
+            const fuzzy = n.fields.filter(
+              (f) =>
+                f.name.toLowerCase().includes(selectedField.toLowerCase()) ||
+                (f.description && f.description.toLowerCase().includes(selectedField.toLowerCase()))
+            );
+            if (fuzzy.length > 0) {
+              if (!affectedFields.has(n.id)) affectedFields.set(n.id, []);
+              fuzzy.forEach((f) =>
+                affectedFields.get(n.id)!.push({
+                  field: f.name,
+                  transform: '字段名模糊匹配',
+                  chain: [`${selectedNode?.name || ''}.${selectedField} ≈ ${n.name}.${f.name}`],
+                })
+              );
+            }
+          }
+        });
+      }
     }
 
     return {
@@ -136,6 +162,23 @@ function ImpactPanel() {
     try {
       const values = await genForm.validateFields();
       if (selectedNode && impactAnalysis) {
+        let fieldImpactDesc = '';
+        if (selectedField && impactAnalysis.affectedFields.size > 0) {
+          fieldImpactDesc = `\n\n--- 字段级影响详情（${selectedNode.name}.${selectedField} 下线影响）---\n`;
+          let idx = 1;
+          for (const [nid, list] of impactAnalysis.affectedFields.entries()) {
+            const n = getNodeById(nid);
+            fieldImpactDesc += `\n【${idx++}】${n?.name || nid} (${typeLabels[n?.type || 'table']}):\n`;
+            list.forEach((fd) => {
+              fieldImpactDesc += `  · ${fd.field}`;
+              if (fd.transform) fieldImpactDesc += ` [${fd.transform}]`;
+              if (fd.chain && fd.chain.length > 0) {
+                fieldImpactDesc += `\n    血缘: ${fd.chain.join(' ← ')}`;
+              }
+              fieldImpactDesc += '\n';
+            });
+          }
+        }
         addTask({
           title: values.title,
           description: `${selectedNode.name} ${scenario} 影响评估：
@@ -144,7 +187,7 @@ function ImpactPanel() {
 - 涉及下游表: ${impactAnalysis.tables.map((t) => t.name).join(', ') || '无'}
 - 风险等级: ${impactAnalysis.riskLevel}
 ${values.description ? `\n补充说明: ${values.description}` : ''}
-${selectedField ? `\n涉及字段: ${selectedField}` : ''}`,
+${selectedField ? `\n变更字段: ${selectedNode.name}.${selectedField}` : ''}${fieldImpactDesc}`,
           priority: values.priority,
           status: 'todo',
           relatedNodeId: selectedNode.id,
@@ -214,11 +257,23 @@ ${selectedField ? `\n涉及字段: ${selectedField}` : ''}`,
       title: '关联字段',
       key: 'fields',
       render: (_: unknown, record: DataNode) => {
-        if (!impactAnalysis?.affectedFields.has(record.id)) return '-';
+        const fieldData = impactAnalysis?.affectedFields.get(record.id);
+        if (!fieldData || fieldData.length === 0) return '-';
         return (
-          <Space wrap>
-            {impactAnalysis.affectedFields.get(record.id)?.map((f) => (
-              <Tag key={f} color="magenta">{f}</Tag>
+          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+            {fieldData.map((fd, idx) => (
+              <div key={idx} style={{ lineHeight: 1.4 }}>
+                <Space wrap>
+                  <Tag color={fd.transform ? 'orange' : 'magenta'}>
+                    {fd.field}
+                  </Tag>
+                  {fd.transform && (
+                    <Tag color="geekblue" style={{ fontSize: 11 }}>
+                      {fd.transform.length > 20 ? fd.transform.slice(0, 20) + '...' : fd.transform}
+                    </Tag>
+                  )}
+                </Space>
+              </div>
             ))}
           </Space>
         );

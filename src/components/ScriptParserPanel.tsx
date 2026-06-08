@@ -53,6 +53,7 @@ function ScriptParserPanel() {
       sourceField: string;
       targetField: string;
       transform?: string;
+      edgeType?: 'direct' | 'transform' | 'aggregate';
     }>;
   }>(null);
 
@@ -157,13 +158,14 @@ function ScriptParserPanel() {
       parseResult.fieldRelations.forEach((fr) => {
         const source = sourceNodes.find((s) => s.name === fr.sourceTable);
         if (source && outputNode) {
+          const edgeType = fr.edgeType || (fr.transform ? 'aggregate' : 'direct');
           addEdge({
             source: source.id,
             target: outputNode.id,
             sourceField: fr.sourceField,
             targetField: fr.targetField,
             transformLogic: fr.transform,
-            type: fr.transform ? 'aggregate' : 'direct',
+            type: edgeType,
           });
         }
       });

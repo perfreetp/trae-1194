@@ -31,6 +31,7 @@ import {
   EyeOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  CloseOutlined,
   EditOutlined,
   ClockCircleOutlined,
   DatabaseOutlined,

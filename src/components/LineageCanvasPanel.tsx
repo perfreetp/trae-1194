@@ -225,7 +225,6 @@ function LineageCanvasPanel() {
     getUpstreamNodes,
     getDownstreamNodes,
     getNodeById,
-    addEdge,
   } = useLineageStore();
   const { message, modal } = AntApp.useApp();
 
@@ -347,7 +346,7 @@ function LineageCanvasPanel() {
         content: `确定从 ${getNodeById(params.source || '')?.name || '源节点'} 到 ${getNodeById(params.target || '')?.name || '目标节点'}?`,
         onOk: () => {
           if (params.source && params.target) {
-            const result = addEdge({
+            const result = storeAddEdge({
               source: params.source,
               target: params.target,
               type: 'direct',
@@ -371,7 +370,7 @@ function LineageCanvasPanel() {
         },
       });
     },
-    [getNodeById, addEdge, setRfEdges, message, modal]
+    [getNodeById, storeAddEdge, setRfEdges, message, modal]
   );
 
   const onNodeClick = (_: React.MouseEvent, node: Node) => {

@@ -1,3 +1,182 @@
+function splitByCommaRespectParens(text: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = '';
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (!inDoubleQuote && ch === "'") {
+      inSingleQuote = !inSingleQuote;
+      current += ch;
+      continue;
+    }
+    if (!inSingleQuote && ch === '"') {
+      inDoubleQuote = !inDoubleQuote;
+      current += ch;
+      continue;
+    }
+    if (inSingleQuote || inDoubleQuote) {
+      current += ch;
+      continue;
+    }
+    if (ch === '(') {
+      depth++;
+      current += ch;
+    } else if (ch === ')') {
+      depth--;
+      current += ch;
+    } else if (ch === ',' && depth === 0) {
+      parts.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  if (current.trim()) parts.push(current.trim());
+  return parts;
+}
+
+function extractTableAndField(
+  expr: string,
+  tableAliases: Map<string, string>
+): { sourceTable: string; sourceField: string } | null {
+  const cleaned = expr
+    .replace(/`/g, '')
+    .replace(/"/g, '')
+    .replace(/\[/g, '')
+    .replace(/\]/g, '');
+  const m = cleaned.match(/([\w]+)\.([\w]+)/);
+  if (m) {
+    const [, ref, field] = m;
+    const table = tableAliases.get(ref) || ref;
+    return { sourceTable: table, sourceField: field };
+  }
+  const m2 = cleaned.match(/\b([\w]+)\b/);
+  if (m2) {
+    return { sourceTable: '', sourceField: m2[1] };
+  }
+  return null;
+}
+
+const AGGREGATE_FUNCS = new Set([
+  'SUM', 'COUNT', 'AVG', 'MIN', 'MAX',
+  'GROUP_CONCAT', 'STDDEV', 'VARIANCE',
+  'COLLECT_SET', 'COLLECT_LIST', 'PERCENTILE',
+]);
+
+const TRANSFORM_FUNCS = new Set([
+  'DATE', 'DATETIME', 'TIMESTAMP', 'DATE_FORMAT',
+  'CAST', 'CONVERT', 'SUBSTRING', 'SUBSTR',
+  'CONCAT', 'CONCAT_WS', 'TRIM', 'LTRIM', 'RTRIM',
+  'UPPER', 'LOWER', 'ROUND', 'CEIL', 'FLOOR',
+  'ABS', 'LENGTH', 'CHAR_LENGTH', 'SPLIT',
+  'REPLACE', 'REGEXP_REPLACE', 'COALESCE', 'NVL',
+  'IF', 'CASE', 'WHEN', 'IFNULL', 'NULLIF',
+]);
+
+function detectTransform(expr: string): { type: 'aggregate' | 'transform' | 'direct'; label: string } | null {
+  const upper = expr.toUpperCase();
+  for (const fn of AGGREGATE_FUNCS) {
+    const re = new RegExp(`\\b${fn}\\s*\\(`, 'i');
+    if (re.test(upper)) {
+      const inner = expr.match(new RegExp(`${fn}\\s*\\(([^)]*(?:\\([^)]*\\)[^)]*)*)\\)`, 'i'));
+      const argStr = inner ? inner[1].trim() : '';
+      return {
+        type: 'aggregate',
+        label: `${fn.toUpperCase()}(${argStr})`,
+      };
+    }
+  }
+  for (const fn of TRANSFORM_FUNCS) {
+    const re = new RegExp(`\\b${fn}\\s*\\(`, 'i');
+    if (re.test(upper)) {
+      const inner = expr.match(new RegExp(`${fn}\\s*\\(([^)]*(?:\\([^)]*\\)[^)]*)*)\\)`, 'i'));
+      const argStr = inner ? inner[1].trim() : '';
+      return {
+        type: 'transform',
+        label: `${fn.toUpperCase()}(${argStr})`,
+      };
+    }
+  }
+  return null;
+}
+
+function parseSelectItem(
+  raw: string,
+  tableAliases: Map<string, string>
+): {
+  sourceTable: string;
+  sourceField: string;
+  targetField: string;
+  transform?: string;
+  edgeType?: 'direct' | 'transform' | 'aggregate';
+} | null {
+  if (!raw) return null;
+  let expr = raw;
+  let alias = '';
+
+  const asMatch = raw.match(/\s+AS\s+([`"\[\w.\]]+)$/i);
+  if (asMatch) {
+    alias = asMatch[1].replace(/[`"\[\]\.]/g, '');
+    expr = raw.slice(0, raw.length - asMatch[0].length).trim();
+  } else {
+    const spaceMatch = raw.match(/\s+([\w]+)$/);
+    if (spaceMatch) {
+      const candidate = spaceMatch[1];
+      const leftPart = raw.slice(0, raw.length - spaceMatch[0].length).trim();
+      if (/[+\-*/()=<>]/.test(leftPart) || /^\w+\s*\(/.test(leftPart)) {
+        alias = candidate;
+        expr = leftPart;
+      }
+    }
+  }
+
+  const tf = detectTransform(expr);
+  const extracted = extractTableAndField(expr, tableAliases);
+
+  let targetField = alias || extracted?.sourceField || expr.replace(/\s+/g, '_');
+  if (!alias && extracted?.sourceField) {
+    targetField = extracted.sourceField;
+  }
+
+  let transform: string | undefined;
+  let edgeType: 'direct' | 'transform' | 'aggregate' = 'direct';
+  if (tf) {
+    let friendlyDesc = tf.label;
+    if (tf.type === 'aggregate') {
+      if (tf.label.toUpperCase().startsWith('COUNT('))
+        friendlyDesc = `${tf.label} 计数`;
+      else if (tf.label.toUpperCase().startsWith('SUM('))
+        friendlyDesc = `${tf.label} 汇总`;
+      else if (tf.label.toUpperCase().startsWith('AVG('))
+        friendlyDesc = `${tf.label} 平均值`;
+      else friendlyDesc = `${tf.label} 聚合计算`;
+    } else {
+      if (tf.label.toUpperCase().startsWith('DATE('))
+        friendlyDesc = `${tf.label} 日期转换`;
+      else if (tf.label.toUpperCase().startsWith('DATE_FORMAT('))
+        friendlyDesc = `${tf.label} 日期格式化`;
+      else if (tf.label.toUpperCase().startsWith('CAST(') || tf.label.toUpperCase().startsWith('CONVERT('))
+        friendlyDesc = `${tf.label} 类型转换`;
+      else friendlyDesc = `${tf.label} 计算`;
+    }
+    transform = friendlyDesc;
+    edgeType = tf.type;
+  } else if (!/^[\w.`"\[\]]+$/.test(expr.trim())) {
+    transform = `${expr.trim()} 表达式计算`;
+    edgeType = 'transform';
+  }
+
+  return {
+    sourceTable: extracted?.sourceTable || '',
+    sourceField: extracted?.sourceField || '',
+    targetField,
+    transform,
+    edgeType,
+  };
+}
+
 export function parseSQL(sql: string): {
   tables: string[];
   outputTable?: string;
@@ -6,6 +185,7 @@ export function parseSQL(sql: string): {
     sourceField: string;
     targetField: string;
     transform?: string;
+    edgeType?: 'direct' | 'transform' | 'aggregate';
   }>;
 } {
   const result: {
@@ -16,6 +196,7 @@ export function parseSQL(sql: string): {
       sourceField: string;
       targetField: string;
       transform?: string;
+      edgeType?: 'direct' | 'transform' | 'aggregate';
     }>;
   } = {
     tables: [],
@@ -79,31 +260,22 @@ export function parseSQL(sql: string): {
   const selectMatch = cleanSql.match(/SELECT\s+([\s\S]*?)\s+FROM\s+/i);
   if (selectMatch) {
     const selectClause = selectMatch[1];
-    const fieldPattern =
-      /(?:([\w]+)\.)?([\w*]+)(?:\s+(?:AS\s+)?([\w]+))?/g;
-    let fieldMatch;
-    while ((fieldMatch = fieldPattern.exec(selectClause)) !== null) {
-      const [, tableRef, field, alias] = fieldMatch;
-      if (field === '*') continue;
-      const targetField = alias || field;
-      let sourceTable = tableRef ? tableAliases.get(tableRef) || tableRef : '';
+    const items = splitByCommaRespectParens(selectClause);
+    for (const item of items) {
+      const parsed = parseSelectItem(item, tableAliases);
+      if (!parsed) continue;
+      if (!parsed.sourceField || parsed.sourceField === '*') continue;
+      let sourceTable = parsed.sourceTable;
       if (!sourceTable && result.tables.length === 1) {
         sourceTable = result.tables[0];
       }
-      const aggregateMatch =
-        selectClause.match(
-          new RegExp(
-            `(SUM|COUNT|AVG|MIN|MAX|GROUP_CONCAT)\\s*\\([^)]*${field}[^)]*\\)`,
-            'i'
-          )
-        );
-      const transform = aggregateMatch ? aggregateMatch[1].toUpperCase() + '()' : undefined;
-      if (sourceTable && field) {
+      if (sourceTable && parsed.targetField) {
         result.fieldRelations.push({
           sourceTable,
-          sourceField: field,
-          targetField,
-          transform,
+          sourceField: parsed.sourceField,
+          targetField: parsed.targetField,
+          transform: parsed.transform,
+          edgeType: parsed.edgeType,
         });
       }
     }

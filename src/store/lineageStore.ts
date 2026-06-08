@@ -2,6 +2,57 @@ import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import type { DataNode, DataEdge, Snapshot, TaskItem, NodeType } from '../types';
 
+const PERSIST_KEY = 'data_lineage_persist_v1';
+
+interface PersistData {
+  nodes: DataNode[];
+  edges: DataEdge[];
+  snapshots: Snapshot[];
+  tasks: TaskItem[];
+  _savedAt: number;
+}
+
+function loadFromStorage(): Partial<PersistData> {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return {};
+    const raw = window.localStorage.getItem(PERSIST_KEY);
+    if (!raw) return {};
+    const data = JSON.parse(raw) as PersistData;
+    return {
+      nodes: data.nodes || [],
+      edges: data.edges || [],
+      snapshots: data.snapshots || [],
+      tasks: data.tasks || [],
+    };
+  } catch (e) {
+    console.warn('读取本地持久化数据失败', e);
+    return {};
+  }
+}
+
+function saveToStorage(state: {
+  nodes: DataNode[];
+  edges: DataEdge[];
+  snapshots: Snapshot[];
+  tasks: TaskItem[];
+}) {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    const data: PersistData = {
+      nodes: state.nodes,
+      edges: state.edges,
+      snapshots: state.snapshots,
+      tasks: state.tasks,
+      _savedAt: Date.now(),
+    };
+    window.localStorage.setItem(PERSIST_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.warn('写入本地持久化数据失败', e);
+  }
+}
+
+const persisted = loadFromStorage();
+
 interface LineageState {
   nodes: DataNode[];
   edges: DataEdge[];
@@ -19,9 +70,7 @@ interface LineageState {
     nodes: Omit<DataNode, 'id' | 'createdAt' | 'updatedAt'>[]
   ) => DataNode[];
 
-  addEdge: (
-    edge: Omit<DataEdge, 'id' | 'createdAt'>
-  ) => DataEdge | null;
+  addEdge: (edge: Omit<DataEdge, 'id' | 'createdAt'>) => DataEdge | null;
   updateEdge: (id: string, updates: Partial<DataEdge>) => void;
   deleteEdge: (id: string) => void;
   batchAddEdges: (
@@ -53,17 +102,23 @@ interface LineageState {
   getNodeById: (id: string) => DataNode | undefined;
   getNodesByType: (type: NodeType) => DataNode[];
 
+  getDownstreamFields: (
+    nodeId: string,
+    fieldName: string
+  ) => Array<{ node: DataNode; field: string; transform?: string; viaNode?: string }>;
+
   importData: (data: { nodes: DataNode[]; edges: DataEdge[] }) => void;
   exportData: () => { nodes: DataNode[]; edges: DataEdge[] };
 
+  clearAll: () => void;
   loadDemoData: () => void;
 }
 
 export const useLineageStore = create<LineageState>((set, get) => ({
-  nodes: [],
-  edges: [],
-  snapshots: [],
-  tasks: [],
+  nodes: persisted.nodes || [],
+  edges: persisted.edges || [],
+  snapshots: persisted.snapshots || [],
+  tasks: persisted.tasks || [],
   selectedNodeId: null,
   selectedField: null,
   focusedNodeId: null,
@@ -77,23 +132,37 @@ export const useLineageStore = create<LineageState>((set, get) => ({
       createdAt: now,
       updatedAt: now,
     };
-    set((state) => ({ nodes: [...state.nodes, newNode] }));
+    set((state) => {
+      const next = { ...state, nodes: [...state.nodes, newNode] };
+      saveToStorage(next);
+      return next;
+    });
     return newNode;
   },
 
   updateNode: (id, updates) =>
-    set((state) => ({
-      nodes: state.nodes.map((n) =>
-        n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n
-      ),
-    })),
+    set((state) => {
+      const next = {
+        ...state,
+        nodes: state.nodes.map((n) =>
+          n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n
+        ),
+      };
+      saveToStorage(next);
+      return next;
+    }),
 
   deleteNode: (id) =>
-    set((state) => ({
-      nodes: state.nodes.filter((n) => n.id !== id),
-      edges: state.edges.filter((e) => e.source !== id && e.target !== id),
-      selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId,
-    })),
+    set((state) => {
+      const next = {
+        ...state,
+        nodes: state.nodes.filter((n) => n.id !== id),
+        edges: state.edges.filter((e) => e.source !== id && e.target !== id),
+        selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId,
+      };
+      saveToStorage(next);
+      return next;
+    }),
 
   batchAddNodes: (nodesList) => {
     const now = Date.now();
@@ -103,7 +172,11 @@ export const useLineageStore = create<LineageState>((set, get) => ({
       createdAt: now,
       updatedAt: now,
     }));
-    set((state) => ({ nodes: [...state.nodes, ...newNodes] }));
+    set((state) => {
+      const next = { ...state, nodes: [...state.nodes, ...newNodes] };
+      saveToStorage(next);
+      return next;
+    });
     return newNodes;
   },
 
@@ -122,19 +195,30 @@ export const useLineageStore = create<LineageState>((set, get) => ({
       id: uuidv4(),
       createdAt: Date.now(),
     };
-    set((s) => ({ edges: [...s.edges, newEdge] }));
+    set((s) => {
+      const next = { ...s, edges: [...s.edges, newEdge] };
+      saveToStorage(next);
+      return next;
+    });
     return newEdge;
   },
 
   updateEdge: (id, updates) =>
-    set((state) => ({
-      edges: state.edges.map((e) => (e.id === id ? { ...e, ...updates } : e)),
-    })),
+    set((state) => {
+      const next = {
+        ...state,
+        edges: state.edges.map((e) => (e.id === id ? { ...e, ...updates } : e)),
+      };
+      saveToStorage(next);
+      return next;
+    }),
 
   deleteEdge: (id) =>
-    set((state) => ({
-      edges: state.edges.filter((e) => e.id !== id),
-    })),
+    set((state) => {
+      const next = { ...state, edges: state.edges.filter((e) => e.id !== id) };
+      saveToStorage(next);
+      return next;
+    }),
 
   batchAddEdges: (edgesList) => {
     const state = get();
@@ -154,7 +238,11 @@ export const useLineageStore = create<LineageState>((set, get) => ({
       id: uuidv4(),
       createdAt: now,
     }));
-    set((s) => ({ edges: [...s.edges, ...newEdges] }));
+    set((s) => {
+      const next = { ...s, edges: [...s.edges, ...newEdges] };
+      saveToStorage(next);
+      return next;
+    });
     return newEdges;
   },
 
@@ -173,22 +261,36 @@ export const useLineageStore = create<LineageState>((set, get) => ({
       nodes: JSON.parse(JSON.stringify(state.nodes)),
       edges: JSON.parse(JSON.stringify(state.edges)),
     };
-    set((s) => ({ snapshots: [...s.snapshots, snapshot] }));
+    set((s) => {
+      const next = { ...s, snapshots: [...s.snapshots, snapshot] };
+      saveToStorage(next);
+      return next;
+    });
     return snapshot;
   },
 
   deleteSnapshot: (id) =>
-    set((state) => ({
-      snapshots: state.snapshots.filter((s) => s.id !== id),
-    })),
+    set((state) => {
+      const next = {
+        ...state,
+        snapshots: state.snapshots.filter((s) => s.id !== id),
+      };
+      saveToStorage(next);
+      return next;
+    }),
 
   restoreSnapshot: (id) => {
     const state = get();
     const snapshot = state.snapshots.find((s) => s.id === id);
     if (snapshot) {
-      set({
-        nodes: JSON.parse(JSON.stringify(snapshot.nodes)),
-        edges: JSON.parse(JSON.stringify(snapshot.edges)),
+      set((s) => {
+        const next = {
+          ...s,
+          nodes: JSON.parse(JSON.stringify(snapshot.nodes)),
+          edges: JSON.parse(JSON.stringify(snapshot.edges)),
+        };
+        saveToStorage(next);
+        return next;
       });
     }
   },
@@ -239,19 +341,30 @@ export const useLineageStore = create<LineageState>((set, get) => ({
       id: uuidv4(),
       createdAt: Date.now(),
     };
-    set((state) => ({ tasks: [...state.tasks, newTask] }));
+    set((state) => {
+      const next = { ...state, tasks: [...state.tasks, newTask] };
+      saveToStorage(next);
+      return next;
+    });
     return newTask;
   },
 
   updateTask: (id, updates) =>
-    set((state) => ({
-      tasks: state.tasks.map((t) => (t.id === id ? { ...t, ...updates } : t)),
-    })),
+    set((state) => {
+      const next = {
+        ...state,
+        tasks: state.tasks.map((t) => (t.id === id ? { ...t, ...updates } : t)),
+      };
+      saveToStorage(next);
+      return next;
+    }),
 
   deleteTask: (id) =>
-    set((state) => ({
-      tasks: state.tasks.filter((t) => t.id !== id),
-    })),
+    set((state) => {
+      const next = { ...state, tasks: state.tasks.filter((t) => t.id !== id) };
+      saveToStorage(next);
+      return next;
+    }),
 
   getUpstreamNodes: (nodeId, levels = Infinity) => {
     const state = get();
@@ -305,11 +418,106 @@ export const useLineageStore = create<LineageState>((set, get) => ({
 
   getNodesByType: (type) => get().nodes.filter((n) => n.type === type),
 
-  importData: (data) => set({ nodes: data.nodes, edges: data.edges }),
+  getDownstreamFields: (nodeId, fieldName) => {
+    const state = get();
+    const result: Array<{
+      node: DataNode;
+      field: string;
+      transform?: string;
+      viaNode?: string;
+    }> = [];
+    const visited = new Set<string>();
+    const queue: Array<{ nid: string; field: string }> = [
+      { nid: nodeId, field: fieldName },
+    ];
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const outEdges = state.edges.filter(
+        (e) =>
+          e.source === current.nid &&
+          (e.sourceField === current.field || !e.sourceField)
+      );
+
+      for (const edge of outEdges) {
+        if (!edge.targetField) continue;
+        const key = `${edge.target}:${edge.targetField}`;
+        if (visited.has(key)) continue;
+        visited.add(key);
+
+        const targetNode = state.nodes.find((n) => n.id === edge.target);
+        if (!targetNode) continue;
+
+        result.push({
+          node: targetNode,
+          field: edge.targetField,
+          transform: edge.transformLogic,
+        });
+        queue.push({ nid: targetNode.id, field: edge.targetField });
+      }
+
+      if (!current.field) continue;
+      const genericOut = state.edges.filter(
+        (e) => e.source === current.nid && !e.sourceField
+      );
+      for (const edge of genericOut) {
+        const tNode = state.nodes.find((n) => n.id === edge.target);
+        if (!tNode) continue;
+        if (tNode.fields && tNode.fields.length > 0) {
+          const matchedFields = tNode.fields.filter(
+            (f) =>
+              f.name.toLowerCase().includes(current.field.toLowerCase()) ||
+              (f.description &&
+                f.description.toLowerCase().includes(current.field.toLowerCase()))
+          );
+          for (const mf of matchedFields) {
+            const key = `${tNode.id}:${mf.name}`;
+            if (visited.has(key)) continue;
+            visited.add(key);
+            result.push({
+              node: tNode,
+              field: mf.name,
+              transform:
+                edge.transformLogic ||
+                (current.field !== mf.name ? '字段名模糊匹配' : undefined),
+              viaNode: current.nid,
+            });
+            queue.push({ nid: tNode.id, field: mf.name });
+          }
+        }
+      }
+    }
+    return result;
+  },
+
+  importData: (data) =>
+    set((s) => {
+      const next = { ...s, nodes: data.nodes, edges: data.edges };
+      saveToStorage(next);
+      return next;
+    }),
 
   exportData: () => {
     const state = get();
     return { nodes: state.nodes, edges: state.edges };
+  },
+
+  clearAll: () => {
+    set((s) => {
+      const next = {
+        ...s,
+        nodes: [],
+        edges: [],
+        snapshots: [],
+        tasks: [],
+        selectedNodeId: null,
+        selectedField: null,
+        focusedNodeId: null,
+        searchQuery: '',
+      };
+      saveToStorage(next);
+      return next;
+    });
   },
 
   loadDemoData: () => {
@@ -496,7 +704,6 @@ import numpy as np
 def calc_retention(user_df, order_df):
     merged = pd.merge(user_df, order_df, on='user_id')
     # 计算首次下单时间和后续回访
-    ...
     return retention_result`,
         createdAt: now,
         updatedAt: now,
@@ -504,30 +711,12 @@ def calc_retention(user_df, order_df):
     ];
 
     const demoEdges: DataEdge[] = [
+      { id: 'e1', source: 'demo_1', target: 'demo_4', type: 'direct', createdAt: now },
+      { id: 'e2', source: 'demo_2', target: 'demo_4', type: 'direct', createdAt: now },
+      { id: 'e3', source: 'demo_3', target: 'demo_4', type: 'direct', createdAt: now },
+      { id: 'e4', source: 'demo_4', target: 'demo_5', type: 'transform', transformLogic: '按用户+日期分组汇总', createdAt: now },
       {
-        id: 'edge_1',
-        source: 'demo_1',
-        target: 'demo_4',
-        type: 'direct',
-        createdAt: now,
-      },
-      {
-        id: 'edge_2',
-        source: 'demo_2',
-        target: 'demo_4',
-        type: 'direct',
-        createdAt: now,
-      },
-      {
-        id: 'edge_3',
-        source: 'demo_4',
-        target: 'demo_5',
-        type: 'transform',
-        transformLogic: '按用户+日期分组汇总订单数和金额',
-        createdAt: now,
-      },
-      {
-        id: 'edge_4',
+        id: 'e_f1',
         source: 'demo_1',
         target: 'demo_5',
         sourceField: 'user_id',
@@ -536,7 +725,7 @@ def calc_retention(user_df, order_df):
         createdAt: now,
       },
       {
-        id: 'edge_5',
+        id: 'e_f2',
         source: 'demo_1',
         target: 'demo_5',
         sourceField: 'user_name',
@@ -545,7 +734,7 @@ def calc_retention(user_df, order_df):
         createdAt: now,
       },
       {
-        id: 'edge_6',
+        id: 'e_f3',
         source: 'demo_1',
         target: 'demo_5',
         sourceField: 'city',
@@ -554,42 +743,49 @@ def calc_retention(user_df, order_df):
         createdAt: now,
       },
       {
-        id: 'edge_7',
+        id: 'e_f4',
+        source: 'demo_2',
+        target: 'demo_5',
+        sourceField: 'order_time',
+        targetField: 'dt',
+        type: 'transform',
+        transformLogic: 'DATE(order_time) 日期提取',
+        createdAt: now,
+      },
+      {
+        id: 'e_f5',
         source: 'demo_2',
         target: 'demo_5',
         sourceField: 'order_id',
         targetField: 'order_count',
         type: 'aggregate',
-        transformLogic: 'COUNT(order_id)',
+        transformLogic: 'COUNT(order_id) 统计订单数',
         createdAt: now,
       },
       {
-        id: 'edge_8',
+        id: 'e_f6',
         source: 'demo_2',
         target: 'demo_5',
         sourceField: 'amount',
         targetField: 'total_amount',
         type: 'aggregate',
-        transformLogic: 'SUM(amount)',
+        transformLogic: 'SUM(amount) 汇总金额',
         createdAt: now,
       },
       {
-        id: 'edge_9',
-        source: 'demo_5',
-        target: 'demo_6',
-        type: 'direct',
+        id: 'e_f7',
+        source: 'demo_2',
+        target: 'demo_5',
+        sourceField: 'quantity',
+        targetField: 'total_quantity',
+        type: 'aggregate',
+        transformLogic: 'SUM(quantity) 汇总数量',
         createdAt: now,
       },
+      { id: 'e5', source: 'demo_5', target: 'demo_6', type: 'direct', createdAt: now },
+      { id: 'e6', source: 'demo_6', target: 'demo_7', type: 'transform', transformLogic: '按城市+月份聚合', createdAt: now },
       {
-        id: 'edge_10',
-        source: 'demo_6',
-        target: 'demo_7',
-        type: 'transform',
-        transformLogic: '按城市+月份分组聚合',
-        createdAt: now,
-      },
-      {
-        id: 'edge_11',
+        id: 'e_f8',
         source: 'demo_5',
         target: 'demo_7',
         sourceField: 'city',
@@ -598,27 +794,47 @@ def calc_retention(user_df, order_df):
         createdAt: now,
       },
       {
-        id: 'edge_12',
+        id: 'e_f9',
+        source: 'demo_5',
+        target: 'demo_7',
+        sourceField: 'dt',
+        targetField: 'month',
+        type: 'transform',
+        transformLogic: "DATE_FORMAT(dt, '%Y-%m') 月份格式化",
+        createdAt: now,
+      },
+      {
+        id: 'e_f10',
         source: 'demo_5',
         target: 'demo_7',
         sourceField: 'order_count',
         targetField: 'city_orders',
         type: 'aggregate',
-        transformLogic: 'SUM(order_count)',
+        transformLogic: 'SUM(order_count) 城市订单总量',
         createdAt: now,
       },
       {
-        id: 'edge_13',
+        id: 'e_f11',
         source: 'demo_5',
         target: 'demo_7',
         sourceField: 'total_amount',
         targetField: 'city_gmv',
         type: 'aggregate',
-        transformLogic: 'SUM(total_amount)',
+        transformLogic: 'SUM(total_amount) 城市GMV',
         createdAt: now,
       },
       {
-        id: 'edge_14',
+        id: 'e_f12',
+        source: 'demo_5',
+        target: 'demo_7',
+        sourceField: 'user_id',
+        targetField: 'active_users',
+        type: 'aggregate',
+        transformLogic: 'COUNT(DISTINCT user_id) 去重活跃用户',
+        createdAt: now,
+      },
+      {
+        id: 'e7',
         source: 'demo_7',
         target: 'demo_8',
         type: 'direct',
@@ -626,65 +842,52 @@ def calc_retention(user_df, order_df):
         createdAt: now,
       },
       {
-        id: 'edge_15',
-        source: 'demo_1',
-        target: 'demo_10',
+        id: 'e_f13',
+        source: 'demo_7',
+        target: 'demo_8',
+        sourceField: 'city_gmv',
+        targetField: 'city_gmv',
         type: 'direct',
         createdAt: now,
       },
       {
-        id: 'edge_16',
-        source: 'demo_2',
-        target: 'demo_10',
+        id: 'e_f14',
+        source: 'demo_7',
+        target: 'demo_8',
+        sourceField: 'city_orders',
+        targetField: 'city_orders',
         type: 'direct',
         createdAt: now,
       },
       {
-        id: 'edge_17',
-        source: 'demo_3',
-        target: 'demo_4',
+        id: 'e_f15',
+        source: 'demo_7',
+        target: 'demo_8',
+        sourceField: 'active_users',
+        targetField: 'active_users',
         type: 'direct',
         createdAt: now,
       },
+      { id: 'e8', source: 'demo_1', target: 'demo_10', type: 'direct', createdAt: now },
+      { id: 'e9', source: 'demo_2', target: 'demo_10', type: 'direct', createdAt: now },
     ];
 
-    const demoTasks: TaskItem[] = [
-      {
-        id: 'task_1',
-        title: '审核 ods_user_info 字段变更影响',
-        description: 'user_id 字段类型变更，需要评估下游所有表和报表',
-        priority: 'high',
-        status: 'doing',
-        relatedNodeId: 'demo_1',
-        assignee: '张三',
-        createdAt: now,
-      },
-      {
-        id: 'task_2',
-        title: '补充 dwd_user_order_daily 文档',
-        description: '完善字段说明和加工逻辑文档',
-        priority: 'medium',
-        status: 'todo',
-        relatedNodeId: 'demo_5',
-        assignee: '张三',
-        createdAt: now,
-      },
-      {
-        id: 'task_3',
-        title: '验证月度报表数据准确性',
-        description: '核对 ads_city_sales_monthly 数据与报表展示一致',
-        priority: 'high',
-        status: 'todo',
-        relatedNodeId: 'demo_8',
-        assignee: '小王',
-        createdAt: now,
-      },
-    ];
-
-    set({
-      nodes: demoNodes,
-      edges: demoEdges,
-      tasks: demoTasks,
+    set((s) => {
+      const existingIds = new Set(s.nodes.map((n) => n.id));
+      const filteredNodes = demoNodes.filter((n) => !existingIds.has(n.id));
+      const existingEdgeKeys = new Set(
+        s.edges.map((e) => `${e.source}:${e.target}:${e.sourceField || ''}:${e.targetField || ''}`)
+      );
+      const filteredEdges = demoEdges.filter(
+        (e) => !existingEdgeKeys.has(`${e.source}:${e.target}:${e.sourceField || ''}:${e.targetField || ''}`)
+      );
+      const next = {
+        ...s,
+        nodes: [...s.nodes, ...filteredNodes],
+        edges: [...s.edges, ...filteredEdges],
+      };
+      saveToStorage(next);
+      return next;
     });
   },
 }));
