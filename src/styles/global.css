@@ -1,0 +1,346 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+}
+
+.app-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #f0f2f5;
+}
+
+.app-header {
+  height: 52px;
+  background: linear-gradient(135deg, #1677ff 0%, #4096ff 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.app-logo {
+  font-size: 18px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-header-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+}
+
+.app-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.app-sidebar {
+  width: 200px;
+  background: #001529;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.app-sidebar .ant-menu {
+  flex: 1;
+  border-right: none;
+}
+
+.app-content {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+  background: #f0f2f5;
+}
+
+.window-card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.window-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.window-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.window-body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
+.node-card {
+  padding: 8px 12px;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  background: #fafafa;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.node-card:hover {
+  border-color: #1677ff;
+  background: #e6f4ff;
+}
+
+.node-card.critical {
+  border-left: 3px solid #ff4d4f;
+}
+
+.node-card.selected {
+  border-color: #1677ff;
+  background: #e6f4ff;
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1);
+}
+
+.field-item {
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.field-item:hover {
+  background: #f5f5f5;
+}
+
+.field-item.selected {
+  background: #e6f4ff;
+  color: #1677ff;
+}
+
+.flow-container {
+  width: 100%;
+  height: 100%;
+}
+
+.custom-node {
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border: 2px solid #d9d9d9;
+  font-size: 12px;
+  min-width: 150px;
+}
+
+.custom-node.table {
+  border-color: #1677ff;
+  background: linear-gradient(135deg, #e6f4ff 0%, #ffffff 100%);
+}
+
+.custom-node.file {
+  border-color: #52c41a;
+  background: linear-gradient(135deg, #f6ffed 0%, #ffffff 100%);
+}
+
+.custom-node.report {
+  border-color: #722ed1;
+  background: linear-gradient(135deg, #f9f0ff 0%, #ffffff 100%);
+}
+
+.custom-node.script {
+  border-color: #fa8c16;
+  background: linear-gradient(135deg, #fff7e6 0%, #ffffff 100%);
+}
+
+.custom-node.critical {
+  box-shadow: 0 2px 8px rgba(255, 77, 79, 0.3);
+}
+
+.custom-node.selected {
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.25);
+}
+
+.custom-node.highlighted {
+  box-shadow: 0 0 0 3px rgba(82, 196, 26, 0.4);
+  transform: scale(1.03);
+  transition: all 0.3s;
+}
+
+.custom-node.dimmed {
+  opacity: 0.3;
+}
+
+.node-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.node-type-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: #e5e7eb;
+}
+
+.node-type-tag.table {
+  background: #e6f4ff;
+  color: #1677ff;
+}
+
+.node-type-tag.file {
+  background: #f6ffed;
+  color: #52c41a;
+}
+
+.node-type-tag.report {
+  background: #f9f0ff;
+  color: #722ed1;
+}
+
+.node-type-tag.script {
+  background: #fff7e6;
+  color: #fa8c16;
+}
+
+.node-owner {
+  font-size: 11px;
+  color: #8c8c8c;
+}
+
+.edge-label-path {
+  background: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #595959;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.stat-card {
+  padding: 16px;
+  border-radius: 8px;
+  background: white;
+  border: 1px solid #f0f0f0;
+}
+
+.stat-card .stat-value {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.stat-card .stat-label {
+  font-size: 12px;
+  color: #8c8c8c;
+  margin-top: 4px;
+}
+
+.stat-card.table .stat-value { color: #1677ff; }
+.stat-card.file .stat-value { color: #52c41a; }
+.stat-card.report .stat-value { color: #722ed1; }
+.stat-card.script .stat-value { color: #fa8c16; }
+.stat-card.critical .stat-value { color: #ff4d4f; }
+.stat-card.edge .stat-value { color: #13c2c2; }
+
+.relation-form-card {
+  padding: 12px;
+  background: #fafafa;
+  border-radius: 6px;
+  border: 1px solid #f0f0f0;
+}
+
+.impact-chain {
+  padding: 12px 16px;
+  border-left: 3px solid #ff4d4f;
+  background: #fff1f0;
+  border-radius: 0 6px 6px 0;
+  margin-bottom: 8px;
+}
+
+.impact-chain.medium {
+  border-left-color: #faad14;
+  background: #fffbe6;
+}
+
+.impact-chain.low {
+  border-left-color: #52c41a;
+  background: #f6ffed;
+}
+
+.snapshot-compare-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+
+.snapshot-compare-row.added {
+  background: #f6ffed;
+  border-left: 3px solid #52c41a;
+}
+
+.snapshot-compare-row.removed {
+  background: #fff1f0;
+  border-left: 3px solid #ff4d4f;
+}
+
+.snapshot-compare-row.modified {
+  background: #fffbe6;
+  border-left: 3px solid #faad14;
+}
+
+.code-block {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 12px;
+  border-radius: 6px;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  max-height: 300px;
+  overflow: auto;
+}
+
+.field-lineage-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  background: #fafafa;
+  border-radius: 4px;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.lineage-arrow {
+  margin: 0 8px;
+  color: #1677ff;
+}

@@ -1,0 +1,64 @@
+{
+  "name": "data-lineage-analyzer",
+  "version": "1.0.0",
+  "description": "数据血缘分析器 - 桌面客户端",
+  "main": "dist-electron/main.js",
+  "author": "DataLineage Team",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "start": "electron .",
+    "electron:dev": "concurrently -k \"vite\" \"wait-on http://localhost:5180 && tsc -p tsconfig.electron.json && electron .\"",
+    "electron:build": "npm run build && tsc -p tsconfig.electron.json && electron-builder",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "antd": "^5.12.0",
+    "@ant-design/icons": "^5.2.6",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "reactflow": "^11.10.1",
+    "zustand": "^4.4.7",
+    "dayjs": "^1.11.10",
+    "uuid": "^9.0.1",
+    "sql-parser-cst": "^0.24.0",
+    "file-saver": "^2.0.5",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "@types/node": "^20.10.5",
+    "@types/uuid": "^9.0.7",
+    "@types/file-saver": "^2.0.7",
+    "@vitejs/plugin-react": "^4.2.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.10",
+    "electron": "^28.1.0",
+    "electron-builder": "^24.9.1",
+    "concurrently": "^8.2.2",
+    "wait-on": "^7.2.0",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0"
+  },
+  "build": {
+    "appId": "com.datalineage.analyzer",
+    "productName": "数据血缘分析器",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
