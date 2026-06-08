@@ -13,6 +13,7 @@ import type {
   MergeStrategy,
   PanelKey,
   PendingTaskFormData,
+  SnapshotContextTag,
 } from '../types';
 
 const PERSIST_KEY = 'data_lineage_persist_v1';
@@ -159,9 +160,15 @@ interface LineageState {
   searchQuery: string;
   activePanel: PanelKey;
   pendingTaskFormData: PendingTaskFormData | null;
+  canvasDetailOpen: boolean;
+  canvasHighlightField: string | null;
+  snapshotContextTag: SnapshotContextTag | null;
 
   setActivePanel: (panel: PanelKey) => void;
   setPendingTaskFormData: (data: PendingTaskFormData | null) => void;
+  setCanvasDetailOpen: (open: boolean) => void;
+  setCanvasHighlightField: (field: string | null) => void;
+  setSnapshotContextTag: (tag: SnapshotContextTag | null) => void;
 
   addNode: (node: Omit<DataNode, 'id' | 'createdAt' | 'updatedAt'>) => DataNode;
   updateNode: (id: string, updates: Partial<DataNode>) => void;
@@ -230,9 +237,15 @@ export const useLineageStore = create<LineageState>((set, get) => ({
   searchQuery: '',
   activePanel: 'canvas',
   pendingTaskFormData: null,
+  canvasDetailOpen: false,
+  canvasHighlightField: null,
+  snapshotContextTag: null,
 
   setActivePanel: (panel) => set({ activePanel: panel }),
   setPendingTaskFormData: (data) => set({ pendingTaskFormData: data }),
+  setCanvasDetailOpen: (open) => set({ canvasDetailOpen: open }),
+  setCanvasHighlightField: (field) => set({ canvasHighlightField: field }),
+  setSnapshotContextTag: (tag) => set({ snapshotContextTag: tag }),
 
   addNode: (node) => {
     const now = Date.now();
@@ -819,6 +832,9 @@ export const useLineageStore = create<LineageState>((set, get) => ({
         focusedNodeId: null,
         searchQuery: '',
         pendingTaskFormData: null,
+        canvasDetailOpen: false,
+        canvasHighlightField: null,
+        snapshotContextTag: null,
       };
       saveToStorage(next);
       return next;

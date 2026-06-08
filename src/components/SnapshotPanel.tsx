@@ -124,6 +124,9 @@ function SnapshotPanel() {
     setActivePanel,
     setPendingTaskFormData,
     getNodeById,
+    setCanvasDetailOpen,
+    setCanvasHighlightField,
+    setSnapshotContextTag,
   } = useLineageStore();
   const { message, modal } = AntApp.useApp();
   const [createOpen, setCreateOpen] = useState(false);
@@ -193,9 +196,24 @@ function SnapshotPanel() {
     });
   };
 
-  const handleJumpToDetail = (nodeId: string) => {
+  const snapshotCompareTitle = `${snap1Name || '旧快照'} → ${snap2Name || '新快照'}`;
+
+  const handleJumpToDetail = (
+    nodeId: string,
+    opts?: {
+      fieldName?: string | null;
+      changeType?: 'added' | 'removed' | 'changed' | null;
+    }
+  ) => {
     selectNode(nodeId);
     setActivePanel('canvas');
+    setCanvasDetailOpen(true);
+    setCanvasHighlightField(opts?.fieldName || null);
+    setSnapshotContextTag({
+      title: snapshotCompareTitle,
+      type: opts?.changeType || null,
+      fieldName: opts?.fieldName || undefined,
+    });
     message.info('已跳转至血缘画布并选中节点');
   };
 
@@ -264,7 +282,11 @@ function SnapshotPanel() {
           <Button
             size="small"
             icon={<SearchOutlined />}
-            onClick={() => handleJumpToDetail(record.id)}
+            onClick={() =>
+              handleJumpToDetail(record.id, {
+                changeType: (type as 'added' | 'removed' | 'changed') || null,
+              })
+            }
             disabled={type === 'removed'}
           >
             详情
@@ -391,7 +413,9 @@ function SnapshotPanel() {
                     <Button
                       size="small"
                       icon={<SearchOutlined />}
-                      onClick={() => handleJumpToDetail(r.id)}
+                      onClick={() =>
+                        handleJumpToDetail(r.id, { changeType: 'added' })
+                      }
                     >
                       详情
                     </Button>
@@ -446,7 +470,9 @@ function SnapshotPanel() {
                     <Button
                       size="small"
                       icon={<SearchOutlined />}
-                      onClick={() => handleJumpToDetail(r.id)}
+                      onClick={() =>
+                        handleJumpToDetail(r.id, { changeType: 'changed' })
+                      }
                     >
                       详情
                     </Button>
@@ -713,7 +739,17 @@ function SnapshotPanel() {
                   <Button
                     size="small"
                     icon={<SearchOutlined />}
-                    onClick={() => handleJumpToDetail(mf.nodeId)}
+                    onClick={() =>
+                      handleJumpToDetail(mf.nodeId, {
+                        changeType: hasChanged
+                          ? 'changed'
+                          : hasAdded
+                          ? 'added'
+                          : hasRemoved
+                          ? 'removed'
+                          : null,
+                      })
+                    }
                   >
                     详情
                   </Button>
@@ -741,10 +777,17 @@ function SnapshotPanel() {
                         <div
                           key={`add-${f.name}`}
                           className="snapshot-compare-row added"
+                          onClick={() =>
+                            handleJumpToDetail(mf.nodeId, {
+                              fieldName: f.name,
+                              changeType: 'added',
+                            })
+                          }
                           style={{
                             padding: '8px 12px',
                             border: hi ? '1px solid #ffa39e' : undefined,
                             background: hi ? '#fff1f0' : undefined,
+                            cursor: 'pointer',
                           }}
                         >
                           <Space wrap style={{ flex: 1 }}>
@@ -755,7 +798,7 @@ function SnapshotPanel() {
                               />
                             )}
                             <Tag color="green" icon={<PlusOutlined />}>新增</Tag>
-                            <code style={{ fontWeight: 600 }}>{f.name}</code>
+                            <code style={{ fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textDecorationStyle: 'dashed' }}>{f.name}</code>
                             {f.type && <Tag color="blue">{f.type}</Tag>}
                             {f.isKey && (
                               <Tag color="gold" icon={<KeyOutlined />}>主键</Tag>
@@ -774,7 +817,7 @@ function SnapshotPanel() {
                               </Tooltip>
                             )}
                           </Space>
-                          <Space size="small">
+                          <Space size="small" onClick={(e) => e.stopPropagation()}>
                             <Button
                               size="small"
                               icon={<UnorderedListOutlined />}
@@ -811,9 +854,16 @@ function SnapshotPanel() {
                         <div
                           key={`rm-${f.name}`}
                           className="snapshot-compare-row removed"
+                          onClick={() =>
+                            handleJumpToDetail(mf.nodeId, {
+                              fieldName: f.name,
+                              changeType: 'removed',
+                            })
+                          }
                           style={{
                             padding: '8px 12px',
                             border: hi ? '2px solid #ff4d4f' : undefined,
+                            cursor: 'pointer',
                           }}
                         >
                           <Space wrap style={{ flex: 1 }}>
@@ -824,7 +874,7 @@ function SnapshotPanel() {
                               />
                             )}
                             <Tag color="red" icon={<CloseOutlined />}>删除</Tag>
-                            <code style={{ fontWeight: 600, textDecoration: 'line-through' }}>
+                            <code style={{ fontWeight: 600, textDecoration: 'line-through', cursor: 'pointer', textDecorationStyle: 'dashed' }}>
                               {f.name}
                             </code>
                             {f.type && <Tag color="blue">{f.type}</Tag>}
@@ -838,7 +888,7 @@ function SnapshotPanel() {
                               <span style={{ color: '#595959' }}>{f.description}</span>
                             )}
                           </Space>
-                          <Space size="small">
+                          <Space size="small" onClick={(e) => e.stopPropagation()}>
                             <Button
                               size="small"
                               danger
@@ -896,8 +946,25 @@ function SnapshotPanel() {
                         key: 'fieldName',
                         width: 160,
                         render: (t: string, r: FieldChange) => (
-                          <Space>
-                            <code style={{ fontWeight: 600 }}>{t}</code>
+                          <Space
+                            onClick={() =>
+                              handleJumpToDetail(mf.nodeId, {
+                                fieldName: t,
+                                changeType: 'changed',
+                              })
+                            }
+                            style={{ cursor: 'pointer' }}
+                          >
+                            <code
+                              style={{
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                textDecoration: 'underline',
+                                textDecorationStyle: 'dashed',
+                              }}
+                            >
+                              {t}
+                            </code>
                             {(r.before?.isKey || r.after?.isKey) && (
                               <Tag color="gold" icon={<KeyOutlined />} />
                             )}
@@ -1070,7 +1137,12 @@ function SnapshotPanel() {
                               <Button
                                 size="small"
                                 icon={<SearchOutlined />}
-                                onClick={() => handleJumpToDetail(mf.nodeId)}
+                                onClick={() =>
+                                  handleJumpToDetail(mf.nodeId, {
+                                    fieldName: r.fieldName,
+                                    changeType: 'changed',
+                                  })
+                                }
                               >
                                 详情
                               </Button>

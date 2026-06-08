@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   Button,
   Space,
@@ -22,6 +22,7 @@ import {
   Badge,
   Checkbox,
   Modal,
+  Alert,
 } from 'antd';
 const { Group: CheckboxGroup } = Checkbox;
 import {
@@ -228,6 +229,12 @@ function LineageCanvasPanel() {
     getDownstreamFields,
     getFieldUpstream,
     getNodeById,
+    canvasDetailOpen,
+    canvasHighlightField,
+    snapshotContextTag,
+    setCanvasDetailOpen,
+    setCanvasHighlightField,
+    setSnapshotContextTag,
   } = useLineageStore();
   const { message, modal } = AntApp.useApp();
 
@@ -246,6 +253,26 @@ function LineageCanvasPanel() {
   ]);
   const [addRelationOpen, setAddRelationOpen] = useState(false);
   const [relForm] = Form.useForm();
+  const fieldItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  useEffect(() => {
+    if (canvasDetailOpen) {
+      setDetailOpen(true);
+      setCanvasDetailOpen(false);
+    }
+  }, [canvasDetailOpen, setCanvasDetailOpen]);
+
+  useEffect(() => {
+    if (detailOpen && canvasHighlightField) {
+      const timer = setTimeout(() => {
+        const el = fieldItemRefs.current.get(canvasHighlightField);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [detailOpen, canvasHighlightField]);
 
   const selectedNode = selectedNodeId ? getNodeById(selectedNodeId) : null;
 
@@ -653,6 +680,36 @@ function LineageCanvasPanel() {
       >
         {selectedNode && (
           <div>
+            {snapshotContextTag && (
+              <Alert
+                type={
+                  snapshotContextTag.type === 'added'
+                    ? 'success'
+                    : snapshotContextTag.type === 'removed'
+                    ? 'error'
+                    : snapshotContextTag.type === 'changed'
+                    ? 'warning'
+                    : 'info'
+                }
+                showIcon
+                closable
+                onClose={() => setSnapshotContextTag(null)}
+                style={{ marginBottom: 16 }}
+                message={
+                  <Space>
+                    <strong>
+                      来自「{snapshotContextTag.title}」：
+                      {snapshotContextTag.type === 'added' && '新增字段'}
+                      {snapshotContextTag.type === 'removed' && '删除字段'}
+                      {snapshotContextTag.type === 'changed' && '修改字段'}
+                      {snapshotContextTag.fieldName && (
+                        <code style={{ marginLeft: 4 }}>{snapshotContextTag.fieldName}</code>
+                      )}
+                    </strong>
+                  </Space>
+                }
+              />
+            )}
             <Descriptions column={2} size="small" bordered style={{ marginBottom: 16 }}>
               <Descriptions.Item label="负责人" span={2}>
                 <Avatar size="small" style={{ marginRight: 8 }}>
@@ -713,18 +770,41 @@ function LineageCanvasPanel() {
                   dataSource={selectedNode.fields}
                   renderItem={(f) => {
                     const isSelected = selectedField === f.name;
+                    const isHighlighted = canvasHighlightField === f.name;
                     return (
-                      <List.Item
-                        className={`field-item ${isSelected ? 'selected' : ''}`}
-                        onClick={() => selectField(isSelected ? null : f.name)}
-                        style={{
-                          cursor: 'pointer',
-                          background: isSelected ? '#fff0f6' : 'transparent',
-                          borderLeft: isSelected ? '3px solid #eb2f96' : '3px solid transparent',
-                          paddingLeft: isSelected ? 9 : 12,
-                          transition: 'all 0.2s',
+                      <div
+                        ref={(el) => {
+                          if (el) {
+                            fieldItemRefs.current.set(f.name, el);
+                          }
                         }}
+                        style={{ display: 'contents' }}
                       >
+                        <List.Item
+                          className={`field-item ${isSelected ? 'selected' : ''}`}
+                          onClick={() => selectField(isSelected ? null : f.name)}
+                          style={{
+                            cursor: 'pointer',
+                            background: isHighlighted
+                              ? '#fff7e6'
+                              : isSelected
+                              ? '#fff0f6'
+                              : 'transparent',
+                            borderLeft: isHighlighted
+                              ? '4px solid #fa8c16'
+                              : isSelected
+                              ? '3px solid #eb2f96'
+                              : '3px solid transparent',
+                            paddingLeft: isHighlighted ? 8 : isSelected ? 9 : 12,
+                            transition: 'all 0.2s',
+                            animation: isHighlighted
+                              ? 'highlightPulse 1.2s ease-in-out 3'
+                              : undefined,
+                            boxShadow: isHighlighted
+                              ? '0 2px 8px rgba(250, 140, 22, 0.25)'
+                              : undefined,
+                          }}
+                        >
                         <Space style={{ flex: 1 }}>
                           {f.isKey && <Tag color="red">主键</Tag>}
                           <code style={{ fontWeight: isSelected ? 700 : 400 }}>{f.name}</code>
@@ -749,9 +829,20 @@ function LineageCanvasPanel() {
                           </Button>
                         </Tooltip>
                       </List.Item>
+                      </div>
                     );
                   }}
                 />
+                <style>{`
+                  @keyframes highlightPulse {
+                    0%, 100% {
+                      background-color: #fff7e6;
+                    }
+                    50% {
+                      background-color: #ffd591;
+                    }
+                  }
+                `}</style>
               </Card>
             )}
 

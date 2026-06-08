@@ -117,3 +117,9 @@ export interface PendingTaskFormData {
   description?: string;
   autoOpen: boolean;
 }
+
+export interface SnapshotContextTag {
+  title: string;
+  type: 'added' | 'removed' | 'changed' | null;
+  fieldName?: string;
+}
