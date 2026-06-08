@@ -36,8 +36,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
+const url = __importStar(require("url"));
 let mainWindow = null;
-const isDev = process.env.NODE_ENV === 'development';
+const isDev = process.argv.includes('--dev') || process.env.NODE_ENV === 'development';
+function resolveRendererPath() {
+    const appPath = electron_1.app.isPackaged ? electron_1.app.getAppPath() : path.join(__dirname, '..');
+    return path.join(appPath, 'dist', 'index.html');
+}
 function createWindow() {
     mainWindow = new electron_1.BrowserWindow({
         width: 1400,
@@ -52,11 +57,16 @@ function createWindow() {
         },
     });
     if (isDev) {
-        mainWindow.loadURL('http://localhost:5173');
+        mainWindow.loadURL('http://localhost:5180');
         mainWindow.webContents.openDevTools();
     }
     else {
-        mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+        const indexPath = resolveRendererPath();
+        mainWindow.loadURL(url.format({
+            pathname: indexPath,
+            protocol: 'file:',
+            slashes: true,
+        }));
     }
     mainWindow.on('closed', () => {
         mainWindow = null;

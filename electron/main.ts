@@ -1,10 +1,16 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as url from 'url';
 
 let mainWindow: BrowserWindow | null = null;
 
-const isDev = process.env.NODE_ENV === 'development';
+const isDev = process.argv.includes('--dev') || process.env.NODE_ENV === 'development';
+
+function resolveRendererPath(): string {
+  const appPath = app.isPackaged ? app.getAppPath() : path.join(__dirname, '..');
+  return path.join(appPath, 'dist', 'index.html');
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -24,7 +30,14 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:5180');
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    const indexPath = resolveRendererPath();
+    mainWindow.loadURL(
+      url.format({
+        pathname: indexPath,
+        protocol: 'file:',
+        slashes: true,
+      })
+    );
   }
 
   mainWindow.on('closed', () => {

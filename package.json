@@ -5,12 +5,15 @@
   "main": "dist-electron/main.js",
   "author": "DataLineage Team",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "npm run dev:electron",
+    "dev:web": "vite",
+    "dev:electron": "concurrently -k \"npm:dev:web\" \"wait-on http://localhost:5180 && tsc -p tsconfig.electron.json && electron . --dev\"",
+    "build": "npm run build:web && npm run build:electron",
+    "build:web": "tsc && vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
     "preview": "vite preview",
     "start": "electron .",
-    "electron:dev": "concurrently -k \"vite\" \"wait-on http://localhost:5180 && tsc -p tsconfig.electron.json && electron .\"",
-    "electron:build": "npm run build && tsc -p tsconfig.electron.json && electron-builder",
+    "electron:build": "npm run build && electron-builder",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
@@ -45,20 +48,34 @@
   "build": {
     "appId": "com.datalineage.analyzer",
     "productName": "数据血缘分析器",
+    "main": "dist-electron/main.js",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "files": [
+      "package.json",
       "dist/**/*",
       "dist-electron/**/*"
     ],
+    "extraMetadata": {
+      "main": "dist-electron/main.js"
+    },
+    "asar": true,
     "win": {
-      "target": "nsis",
-      "icon": "public/icon.ico"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "数据血缘分析器"
     }
   }
 }
