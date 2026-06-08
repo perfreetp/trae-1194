@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Button,
   Card,
@@ -62,6 +62,8 @@ function TaskPanel() {
     deleteTask,
     getNodeById,
     nodes,
+    pendingTaskFormData,
+    setPendingTaskFormData,
   } = useLineageStore();
   const { message, modal } = AntApp.useApp();
 
@@ -73,6 +75,27 @@ function TaskPanel() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [assigneeFilter, setAssigneeFilter] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (pendingTaskFormData?.autoOpen) {
+      addForm.resetFields();
+      const relatedNodeName = pendingTaskFormData.relatedNodeId
+        ? getNodeById(pendingTaskFormData.relatedNodeId)?.name
+        : undefined;
+      addForm.setFieldsValue({
+        priority: pendingTaskFormData.priority,
+        relatedNodeId: pendingTaskFormData.relatedNodeId,
+        relatedFields: pendingTaskFormData.relatedFields,
+        title:
+          pendingTaskFormData.title ||
+          `处理 ${relatedNodeName || '节点'} 的字段变更`,
+        description: pendingTaskFormData.description,
+        changeSource: pendingTaskFormData.changeSource,
+      });
+      setAddOpen(true);
+      setPendingTaskFormData(null);
+    }
+  }, [pendingTaskFormData, addForm, getNodeById, setPendingTaskFormData]);
 
   const assignees = useMemo(() => {
     const set = new Set<string>();
@@ -120,6 +143,8 @@ function TaskPanel() {
         priority: values.priority,
         status: 'todo',
         relatedNodeId: values.relatedNodeId,
+        relatedFields: values.relatedFields,
+        changeSource: values.changeSource,
         assignee: values.assignee,
         dueDate: values.dueDate?.valueOf(),
       });
@@ -515,6 +540,22 @@ function TaskPanel() {
             <Col span={10}>
               <Form.Item label="截止日期" name="dueDate">
                 <DatePicker style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={12}>
+            <Col span={14}>
+              <Form.Item label="关联字段" name="relatedFields">
+                <Select
+                  mode="tags"
+                  placeholder="输入或选择关联字段名（可选）"
+                  style={{ width: '100%' }}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={10}>
+              <Form.Item label="变更来源" name="changeSource">
+                <Input placeholder="如：快照对比、字段变更等" />
               </Form.Item>
             </Col>
           </Row>

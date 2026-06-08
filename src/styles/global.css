@@ -196,6 +196,11 @@ html, body, #root {
   opacity: 0.3;
 }
 
+.custom-node.field-dimmed {
+  opacity: 0.25;
+  transition: opacity 0.3s;
+}
+
 .node-title {
   font-weight: 600;
   margin-bottom: 4px;
@@ -343,4 +348,12 @@ html, body, #root {
 .lineage-arrow {
   margin: 0 8px;
   color: #1677ff;
+}
+
+.high-risk-field-change-row > td {
+  background: #fff1f0 !important;
+}
+
+.high-risk-field-change-row:hover > td {
+  background: #ffe7e6 !important;
 }

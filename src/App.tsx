@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect } from 'react';
 import { Menu, Button, App as AntApp } from 'antd';
 import {
   DatabaseOutlined,
@@ -15,6 +15,7 @@ import {
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { useLineageStore } from './store/lineageStore';
+import type { PanelKey } from './types';
 import DataSourcePanel from './components/DataSourcePanel';
 import ScriptParserPanel from './components/ScriptParserPanel';
 import LineageCanvasPanel from './components/LineageCanvasPanel';
@@ -23,16 +24,6 @@ import ImpactPanel from './components/ImpactPanel';
 import SnapshotPanel from './components/SnapshotPanel';
 import TaskPanel from './components/TaskPanel';
 import ReportExportPanel from './components/ReportExportPanel';
-
-type WindowKey =
-  | 'datasource'
-  | 'parser'
-  | 'canvas'
-  | 'search'
-  | 'impact'
-  | 'snapshot'
-  | 'task'
-  | 'report';
 
 const menuItems: Required<MenuProps>['items'] = [
   {
@@ -78,12 +69,11 @@ const menuItems: Required<MenuProps>['items'] = [
 ];
 
 function App() {
-  const [activeWindow, setActiveWindow] = useState<WindowKey>('canvas');
-  const { loadDemoData, clearAll } = useLineageStore();
+  const { loadDemoData, clearAll, activePanel, setActivePanel } = useLineageStore();
   const { message, modal } = AntApp.useApp();
 
   const renderWindow = () => {
-    switch (activeWindow) {
+    switch (activePanel) {
       case 'datasource':
         return <DataSourcePanel />;
       case 'parser':
@@ -104,6 +94,12 @@ function App() {
         return <LineageCanvasPanel />;
     }
   };
+
+  useEffect(() => {
+    if (activePanel === 'task') {
+      document.querySelector('.app-content')?.scrollTo(0, 0);
+    }
+  }, [activePanel]);
 
   return (
     <div className="app-container">
@@ -159,8 +155,8 @@ function App() {
           <Menu
             theme="dark"
             mode="inline"
-            selectedKeys={[activeWindow]}
-            onClick={({ key }) => setActiveWindow(key as WindowKey)}
+            selectedKeys={[activePanel]}
+            onClick={({ key }) => setActivePanel(key as PanelKey)}
             items={menuItems}
             style={{ height: '100%' }}
           />

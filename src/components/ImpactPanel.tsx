@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Button,
   Card,
@@ -67,14 +67,43 @@ function ImpactPanel() {
     getNodeById,
     addTask,
     getDownstreamFields,
+    selectedNodeId: storeSelectedNodeId,
+    selectedField: storeSelectedField,
+    selectNode,
+    selectField,
   } = useLineageStore();
   const { message, modal } = AntApp.useApp();
 
-  const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>(undefined);
-  const [selectedField, setSelectedField] = useState<string | undefined>(undefined);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>(
+    storeSelectedNodeId ?? undefined
+  );
+  const [selectedField, setSelectedField] = useState<string | undefined>(
+    storeSelectedField ?? undefined
+  );
   const [scenario, setScenario] = useState<'offline' | 'modify' | 'rename'>('offline');
   const [generateOpen, setGenerateOpen] = useState(false);
   const [genForm] = Form.useForm();
+
+  useEffect(() => {
+    if (storeSelectedNodeId && storeSelectedNodeId !== selectedNodeId) {
+      setSelectedNodeId(storeSelectedNodeId);
+    }
+    if (storeSelectedField && storeSelectedField !== selectedField) {
+      setSelectedField(storeSelectedField);
+    }
+  }, [storeSelectedNodeId, storeSelectedField]);
+
+  const handleNodeChange = (id: string | undefined) => {
+    setSelectedNodeId(id);
+    setSelectedField(undefined);
+    selectNode(id ?? null);
+    selectField(null);
+  };
+
+  const handleFieldChange = (field: string | undefined) => {
+    setSelectedField(field);
+    selectField(field ?? null);
+  };
 
   const selectedNode = selectedNodeId ? getNodeById(selectedNodeId) : null;
 
@@ -319,7 +348,7 @@ ${selectedField ? `\n变更字段: ${selectedNode.name}.${selectedField}` : ''}$
                   style={{ width: '100%' }}
                   placeholder="选择要评估的节点（表/字段/脚本）"
                   value={selectedNodeId}
-                  onChange={setSelectedNodeId}
+                  onChange={handleNodeChange}
                   optionFilterProp="label"
                   size="large"
                   options={nodes.map((n) => ({
@@ -354,7 +383,7 @@ ${selectedField ? `\n变更字段: ${selectedNode.name}.${selectedField}` : ''}$
                   style={{ width: '100%' }}
                   placeholder="字段级精确评估，不选则评估整个节点"
                   value={selectedField}
-                  onChange={setSelectedField}
+                  onChange={handleFieldChange}
                   size="large"
                   disabled={!selectedNode}
                   options={

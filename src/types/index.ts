@@ -5,6 +5,23 @@ export interface FieldInfo {
   type?: string;
   description?: string;
   isKey?: boolean;
+  isSensitive?: boolean;
+  businessRule?: string;
+}
+
+export interface FieldChange {
+  fieldName: string;
+  before?: Partial<FieldInfo>;
+  after?: Partial<FieldInfo>;
+  changedProps: string[];
+}
+
+export interface ModifiedFields {
+  nodeId: string;
+  nodeName: string;
+  added: FieldInfo[];
+  removed: FieldInfo[];
+  changed: FieldChange[];
 }
 
 export interface DataNode {
@@ -50,6 +67,8 @@ export interface TaskItem {
   priority: 'high' | 'medium' | 'low';
   status: 'todo' | 'doing' | 'done';
   relatedNodeId?: string;
+  relatedFields?: string[];
+  changeSource?: string;
   assignee?: string;
   createdAt: number;
   dueDate?: number;
@@ -66,4 +85,35 @@ export interface ImpactAnalysis {
 export interface SearchResult {
   node: DataNode;
   matchedFields: string[];
+}
+
+export interface CompareSnapshotsResult {
+  addedNodes: DataNode[];
+  removedNodes: DataNode[];
+  modifiedNodes: DataNode[];
+  addedEdges: DataEdge[];
+  removedEdges: DataEdge[];
+  modifiedFields: ModifiedFields[];
+}
+
+export type MergeStrategy = 'merge' | 'overwrite' | 'skip';
+
+export type PanelKey =
+  | 'datasource'
+  | 'parser'
+  | 'canvas'
+  | 'search'
+  | 'impact'
+  | 'snapshot'
+  | 'task'
+  | 'report';
+
+export interface PendingTaskFormData {
+  priority: 'high' | 'medium' | 'low';
+  relatedNodeId?: string;
+  relatedFields?: string[];
+  changeSource?: string;
+  title?: string;
+  description?: string;
+  autoOpen: boolean;
 }

@@ -219,11 +219,14 @@ function LineageCanvasPanel() {
     selectedNodeId,
     selectNode,
     selectedField,
+    selectField,
     addEdge: storeAddEdge,
     focusNode,
     focusedNodeId,
     getUpstreamNodes,
     getDownstreamNodes,
+    getDownstreamFields,
+    getFieldUpstream,
     getNodeById,
   } = useLineageStore();
   const { message, modal } = AntApp.useApp();
@@ -284,8 +287,74 @@ function LineageCanvasPanel() {
     [edges, visibleNodeIds]
   );
 
+  const { highlightedEdgeIds, involvedNodeIds } = useMemo(() => {
+    const edgeIds = new Set<string>();
+    const nodeIds = new Set<string>();
+
+    if (!selectedNodeId || !selectedField) {
+      return { highlightedEdgeIds: edgeIds, involvedNodeIds: nodeIds };
+    }
+
+    nodeIds.add(selectedNodeId);
+
+    const visitedFieldKey = new Set<string>();
+    const queue: Array<{ nid: string; field: string; dir: 'up' | 'down' | 'both' }> = [
+      { nid: selectedNodeId, field: selectedField, dir: 'both' },
+    ];
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const curKey = `${current.nid}:${current.field}`;
+      if (visitedFieldKey.has(curKey)) continue;
+      visitedFieldKey.add(curKey);
+
+      if (current.dir === 'down' || current.dir === 'both') {
+        for (const edge of visibleEdges) {
+          const matchSource =
+            edge.source === current.nid &&
+            (edge.sourceField === current.field || !edge.sourceField);
+          if (!matchSource) continue;
+          if (!edge.targetField) {
+            edgeIds.add(edge.id);
+            nodeIds.add(edge.target);
+            continue;
+          }
+          edgeIds.add(edge.id);
+          nodeIds.add(edge.target);
+          const nextKey = `${edge.target}:${edge.targetField}`;
+          if (!visitedFieldKey.has(nextKey)) {
+            queue.push({ nid: edge.target, field: edge.targetField, dir: 'down' });
+          }
+        }
+      }
+
+      if (current.dir === 'up' || current.dir === 'both') {
+        for (const edge of visibleEdges) {
+          const matchTarget =
+            edge.target === current.nid &&
+            (edge.targetField === current.field || !edge.targetField);
+          if (!matchTarget) continue;
+          if (!edge.sourceField) {
+            edgeIds.add(edge.id);
+            nodeIds.add(edge.source);
+            continue;
+          }
+          edgeIds.add(edge.id);
+          nodeIds.add(edge.source);
+          const nextKey = `${edge.source}:${edge.sourceField}`;
+          if (!visitedFieldKey.has(nextKey)) {
+            queue.push({ nid: edge.source, field: edge.sourceField, dir: 'up' });
+          }
+        }
+      }
+    }
+
+    return { highlightedEdgeIds: edgeIds, involvedNodeIds: nodeIds };
+  }, [selectedNodeId, selectedField, visibleEdges]);
+
   useEffect(() => {
     const layouted = getLayoutedNodes(visibleNodes, visibleEdges);
+    const hasFieldSelection = !!selectedNodeId && !!selectedField;
     if (focusedNodeId) {
       const highlightIds = new Set<string>([focusedNodeId]);
       const upstreamIds = getUpstreamNodes(focusedNodeId, expandLevels).map((n) => n.id);
@@ -300,6 +369,17 @@ function LineageCanvasPanel() {
         } else {
           node.className = 'dimmed';
         }
+        if (hasFieldSelection && !involvedNodeIds.has(node.id)) {
+          node.className = (node.className ? node.className + ' ' : '') + 'field-dimmed';
+        }
+      });
+    } else if (hasFieldSelection) {
+      layouted.forEach((node) => {
+        if (node.id === selectedNodeId) {
+          node.className = 'selected';
+        } else if (!involvedNodeIds.has(node.id)) {
+          node.className = 'field-dimmed';
+        }
       });
     } else if (selectedNodeId) {
       layouted.forEach((node) => {
@@ -311,8 +391,12 @@ function LineageCanvasPanel() {
     setRfNodes(layouted);
 
     const mappedEdges: Edge[] = visibleEdges.map((e) => {
+      const isHighlighted = highlightedEdgeIds.has(e.id);
       let label = '';
       let color = '#999';
+      let strokeWidth = 1.5;
+      let opacity = 1;
+
       if (e.type === 'transform') {
         color = '#fa8c16';
         label = '转换';
@@ -323,21 +407,52 @@ function LineageCanvasPanel() {
       if (e.transformLogic) {
         label = e.transformLogic;
       }
+
+      if (isHighlighted) {
+        color = '#eb2f96';
+        strokeWidth = 3.5;
+        if (e.transformLogic) {
+          label = e.transformLogic;
+        } else if (e.sourceField || e.targetField) {
+          label = `${e.sourceField || '?'} → ${e.targetField || '?'}`;
+        }
+      } else if (hasFieldSelection) {
+        opacity = 0.2;
+      }
+
       return {
         id: e.id,
         source: e.source,
         target: e.target,
-        animated: e.type === 'transform' || e.type === 'aggregate',
+        animated: isHighlighted || e.type === 'transform' || e.type === 'aggregate',
         label,
-        labelStyle: { fontSize: 10, fill: color },
+        labelStyle: {
+          fontSize: isHighlighted ? 12 : 10,
+          fill: color,
+          fontWeight: isHighlighted ? 700 : 400,
+        },
         labelBgPadding: [4, 2],
-        labelBgStyle: { fill: 'white', fillOpacity: 0.9 },
-        style: { stroke: color, strokeWidth: selectedField ? 2 : 1.5 },
+        labelBgStyle: {
+          fill: 'white',
+          fillOpacity: isHighlighted ? 1 : 0.9,
+          stroke: isHighlighted ? '#eb2f96' : 'transparent',
+          strokeWidth: isHighlighted ? 1 : 0,
+        },
+        style: { stroke: color, strokeWidth, opacity },
         markerEnd: { type: MarkerType.ArrowClosed, color: color },
       };
     });
     setRfEdges(mappedEdges);
-  }, [visibleNodes, visibleEdges, focusedNodeId, selectedNodeId, expandLevels]);
+  }, [
+    visibleNodes,
+    visibleEdges,
+    focusedNodeId,
+    selectedNodeId,
+    selectedField,
+    expandLevels,
+    highlightedEdgeIds,
+    involvedNodeIds,
+  ]);
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -374,8 +489,15 @@ function LineageCanvasPanel() {
   );
 
   const onNodeClick = (_: React.MouseEvent, node: Node) => {
+    if (node.id !== selectedNodeId) {
+      selectField(null);
+    }
     selectNode(node.id);
     setDetailOpen(true);
+  };
+
+  const handlePaneClick = () => {
+    selectField(null);
   };
 
   const handleAddRelation = async () => {
@@ -472,6 +594,7 @@ function LineageCanvasPanel() {
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
               onNodeClick={onNodeClick}
+              onPaneClick={handlePaneClick}
               nodeTypes={nodeTypes}
               fitView
               fitViewOptions={{ padding: 0.2 }}
@@ -562,28 +685,72 @@ function LineageCanvasPanel() {
                   <Space>
                     <BulbOutlined />
                     字段定义 ({selectedNode.fields.length})
+                    {selectedField && (
+                      <Tag
+                        color="magenta"
+                        closable
+                        onClose={(e) => {
+                          e.stopPropagation();
+                          selectField(null);
+                        }}
+                      >
+                        追踪中: {selectedField}
+                      </Tag>
+                    )}
                   </Space>
                 }
                 style={{ marginBottom: 16 }}
+                extra={
+                  selectedField && (
+                    <Button size="small" type="text" onClick={() => selectField(null)}>
+                      <CloseOutlined /> 取消追踪
+                    </Button>
+                  )
+                }
               >
                 <List
                   size="small"
                   dataSource={selectedNode.fields}
-                  renderItem={(f) => (
-                    <List.Item
-                      className={`field-item ${selectedField === f.name ? 'selected' : ''}`}
-                      onClick={() => useLineageStore.getState().selectField(f.name)}
-                    >
-                      <Space>
-                        {f.isKey && <Tag color="red">主键</Tag>}
-                        <code>{f.name}</code>
-                        {f.type && <Tag color="blue">{f.type}</Tag>}
-                        <span style={{ color: '#8c8c8c', fontSize: 12 }}>
-                          {f.description}
-                        </span>
-                      </Space>
-                    </List.Item>
-                  )}
+                  renderItem={(f) => {
+                    const isSelected = selectedField === f.name;
+                    return (
+                      <List.Item
+                        className={`field-item ${isSelected ? 'selected' : ''}`}
+                        onClick={() => selectField(isSelected ? null : f.name)}
+                        style={{
+                          cursor: 'pointer',
+                          background: isSelected ? '#fff0f6' : 'transparent',
+                          borderLeft: isSelected ? '3px solid #eb2f96' : '3px solid transparent',
+                          paddingLeft: isSelected ? 9 : 12,
+                          transition: 'all 0.2s',
+                        }}
+                      >
+                        <Space style={{ flex: 1 }}>
+                          {f.isKey && <Tag color="red">主键</Tag>}
+                          <code style={{ fontWeight: isSelected ? 700 : 400 }}>{f.name}</code>
+                          {f.type && <Tag color="blue">{f.type}</Tag>}
+                          <span style={{ color: '#8c8c8c', fontSize: 12, flex: 1 }}>
+                            {f.description}
+                          </span>
+                        </Space>
+                        <Tooltip title={isSelected ? '取消追踪' : '🔍 追踪该字段血缘'}>
+                          <Button
+                            size="small"
+                            type={isSelected ? 'primary' : 'text'}
+                            danger={isSelected}
+                            icon={<span>🔍</span>}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              selectField(isSelected ? null : f.name);
+                            }}
+                            style={isSelected ? { background: '#eb2f96', borderColor: '#eb2f96' } : {}}
+                          >
+                            {isSelected ? '追踪中' : '追踪'}
+                          </Button>
+                        </Tooltip>
+                      </List.Item>
+                    );
+                  }}
                 />
               </Card>
             )}

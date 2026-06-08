@@ -1,6 +1,19 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import type { DataNode, DataEdge, Snapshot, TaskItem, NodeType } from '../types';
+import type {
+  DataNode,
+  DataEdge,
+  Snapshot,
+  TaskItem,
+  NodeType,
+  FieldInfo,
+  FieldChange,
+  ModifiedFields,
+  CompareSnapshotsResult,
+  MergeStrategy,
+  PanelKey,
+  PendingTaskFormData,
+} from '../types';
 
 const PERSIST_KEY = 'data_lineage_persist_v1';
 
@@ -51,6 +64,88 @@ function saveToStorage(state: {
   }
 }
 
+function compareNodeFields(oldNode: DataNode, newNode: DataNode): ModifiedFields {
+  const oldFields = oldNode.fields || [];
+  const newFields = newNode.fields || [];
+  const oldFieldMap = new Map(oldFields.map((f) => [f.name, f]));
+  const newFieldMap = new Map(newFields.map((f) => [f.name, f]));
+  const oldFieldNames = new Set(oldFields.map((f) => f.name));
+  const newFieldNames = new Set(newFields.map((f) => f.name));
+
+  const added: FieldInfo[] = [];
+  const removed: FieldInfo[] = [];
+  const changed: FieldChange[] = [];
+
+  for (const f of newFields) {
+    if (!oldFieldNames.has(f.name)) {
+      added.push(f);
+    }
+  }
+
+  for (const f of oldFields) {
+    if (!newFieldNames.has(f.name)) {
+      removed.push(f);
+    }
+  }
+
+  for (const f of newFields) {
+    if (oldFieldNames.has(f.name)) {
+      const oldF = oldFieldMap.get(f.name)!;
+      const changedProps: string[] = [];
+      const allKeys = new Set([
+        ...Object.keys(oldF),
+        ...Object.keys(f),
+      ]) as Set<keyof FieldInfo>;
+      for (const key of allKeys) {
+        if (JSON.stringify(oldF[key]) !== JSON.stringify(f[key])) {
+          changedProps.push(key);
+        }
+      }
+      if (changedProps.length > 0) {
+        changed.push({
+          fieldName: f.name,
+          before: { ...oldF },
+          after: { ...f },
+          changedProps,
+        });
+      }
+    }
+  }
+
+  return {
+    nodeId: newNode.id,
+    nodeName: newNode.name,
+    added,
+    removed,
+    changed,
+  };
+}
+
+function mergeFields(
+  existingFields: FieldInfo[] | undefined,
+  newFields: FieldInfo[] | undefined,
+  strategy: MergeStrategy
+): FieldInfo[] | undefined {
+  if (strategy === 'overwrite') return newFields;
+  if (strategy === 'skip') return existingFields;
+  if (!newFields || newFields.length === 0) return existingFields;
+  if (!existingFields || existingFields.length === 0) return newFields;
+
+  const merged = new Map<string, FieldInfo>();
+  for (const f of existingFields) {
+    merged.set(f.name, { ...f });
+  }
+  for (const f of newFields) {
+    const existing = merged.get(f.name);
+    if (existing) {
+      merged.set(f.name, { ...existing, ...f });
+    } else {
+      merged.set(f.name, { ...f });
+    }
+  }
+  return Array.from(merged.values());
+}
+
 const persisted = loadFromStorage();
 
 interface LineageState {
@@ -62,6 +157,11 @@ interface LineageState {
   selectedField: string | null;
   focusedNodeId: string | null;
   searchQuery: string;
+  activePanel: PanelKey;
+  pendingTaskFormData: PendingTaskFormData | null;
+
+  setActivePanel: (panel: PanelKey) => void;
+  setPendingTaskFormData: (data: PendingTaskFormData | null) => void;
 
   addNode: (node: Omit<DataNode, 'id' | 'createdAt' | 'updatedAt'>) => DataNode;
   updateNode: (id: string, updates: Partial<DataNode>) => void;
@@ -85,13 +185,18 @@ interface LineageState {
   createSnapshot: (name: string, description?: string) => Snapshot;
   deleteSnapshot: (id: string) => void;
   restoreSnapshot: (id: string) => void;
-  compareSnapshots: (snap1Id: string, snap2Id: string) => {
-    addedNodes: DataNode[];
-    removedNodes: DataNode[];
-    modifiedNodes: DataNode[];
-    addedEdges: DataEdge[];
-    removedEdges: DataEdge[];
-  };
+  compareSnapshots: (snap1Id: string, snap2Id: string) => CompareSnapshotsResult;
+  compareFieldLevel: (snap1Id: string, snap2Id: string) => ModifiedFields[];
+  findDuplicateNodesByName: (nodesList: DataNode[]) => DataNode[];
+  mergeNodeWithStrategy: (
+    existingId: string,
+    newNodeData: Partial<DataNode>,
+    strategy: MergeStrategy
+  ) => DataNode | null;
+  getFieldUpstream: (
+    nodeId: string,
+    fieldName: string
+  ) => Array<{ node: DataNode; field: string; transform?: string; viaNode?: string }>;
 
   addTask: (task: Omit<TaskItem, 'id' | 'createdAt'>) => TaskItem;
   updateTask: (id: string, updates: Partial<TaskItem>) => void;
@@ -123,6 +228,11 @@ export const useLineageStore = create<LineageState>((set, get) => ({
   selectedField: null,
   focusedNodeId: null,
   searchQuery: '',
+  activePanel: 'canvas',
+  pendingTaskFormData: null,
+
+  setActivePanel: (panel) => set({ activePanel: panel }),
+  setPendingTaskFormData: (data) => set({ pendingTaskFormData: data }),
 
   addNode: (node) => {
     const now = Date.now();
@@ -306,6 +416,7 @@ export const useLineageStore = create<LineageState>((set, get) => ({
         modifiedNodes: [],
         addedEdges: [],
         removedEdges: [],
+        modifiedFields: [],
       };
     }
     const snap1NodeIds = new Set(snap1.nodes.map((n) => n.id));
@@ -326,13 +437,206 @@ export const useLineageStore = create<LineageState>((set, get) => ({
     const addedEdges = snap2.edges.filter((e) => !snap1EdgeIds.has(e.id));
     const removedEdges = snap1.edges.filter((e) => !snap2EdgeIds.has(e.id));
 
+    const modifiedFields: ModifiedFields[] = modifiedNodes.map((node) => {
+      const oldNode = snap1.nodes.find((n) => n.id === node.id)!;
+      return compareNodeFields(oldNode, node);
+    });
+
     return {
       addedNodes,
       removedNodes,
       modifiedNodes,
       addedEdges,
       removedEdges,
+      modifiedFields,
     };
+  },
+
+  compareFieldLevel: (snap1Id, snap2Id) => {
+    const state = get();
+    const snap1 = state.snapshots.find((s) => s.id === snap1Id);
+    const snap2 = state.snapshots.find((s) => s.id === snap2Id);
+    if (!snap1 || !snap2) return [];
+
+    const snap1NodeIds = new Set(snap1.nodes.map((n) => n.id));
+    const snap2NodeIds = new Set(snap2.nodes.map((n) => n.id));
+    const commonIds = [...snap1NodeIds].filter((id) => snap2NodeIds.has(id));
+
+    const result: ModifiedFields[] = [];
+    for (const id of commonIds) {
+      const n1 = snap1.nodes.find((n) => n.id === id)!;
+      const n2 = snap2.nodes.find((n) => n.id === id)!;
+      const mf = compareNodeFields(n1, n2);
+      if (
+        mf.added.length > 0 ||
+        mf.removed.length > 0 ||
+        mf.changed.length > 0
+      ) {
+        result.push(mf);
+      }
+    }
+
+    for (const n of snap2.nodes) {
+      if (!snap1NodeIds.has(n.id) && n.fields && n.fields.length > 0) {
+        result.push({
+          nodeId: n.id,
+          nodeName: n.name,
+          added: [...n.fields],
+          removed: [],
+          changed: [],
+        });
+      }
+    }
+
+    for (const n of snap1.nodes) {
+      if (!snap2NodeIds.has(n.id) && n.fields && n.fields.length > 0) {
+        result.push({
+          nodeId: n.id,
+          nodeName: n.name,
+          added: [],
+          removed: [...n.fields],
+          changed: [],
+        });
+      }
+    }
+
+    return result;
+  },
+
+  findDuplicateNodesByName: (nodesList) => {
+    const state = get();
+    const existingNameSet = new Set(state.nodes.map((n) => n.name));
+    const duplicates: DataNode[] = [];
+    const seenInList = new Set<string>();
+
+    for (const node of nodesList) {
+      const name = node.name;
+      if (existingNameSet.has(name) || seenInList.has(name)) {
+        const existing = state.nodes.find((n) => n.name === name);
+        if (existing) {
+          duplicates.push(existing);
+        } else {
+          const listDuplicate = nodesList.find(
+            (n, i) => n.name === name && nodesList.indexOf(node) !== i
+          );
+          if (listDuplicate) duplicates.push(listDuplicate);
+        }
+      }
+      seenInList.add(name);
+    }
+
+    return duplicates;
+  },
+
+  mergeNodeWithStrategy: (existingId, newNodeData, strategy) => {
+    const state = get();
+    const existing = state.nodes.find((n) => n.id === existingId);
+    if (!existing) return null;
+
+    if (strategy === 'skip') return existing;
+
+    let merged: DataNode;
+    if (strategy === 'overwrite') {
+      merged = {
+        ...existing,
+        ...newNodeData,
+        id: existing.id,
+        createdAt: existing.createdAt,
+        updatedAt: Date.now(),
+      };
+    } else {
+      const { fields: newFields, id: _id, createdAt: _ca, updatedAt: _ua, ...restNew } = newNodeData;
+      const mergedFields = mergeFields(existing.fields, newFields, strategy);
+      merged = {
+        ...existing,
+        ...restNew,
+        fields: mergedFields,
+        updatedAt: Date.now(),
+      };
+    }
+
+    set((s) => {
+      const next = {
+        ...s,
+        nodes: s.nodes.map((n) => (n.id === existingId ? merged : n)),
+      };
+      saveToStorage(next);
+      return next;
+    });
+
+    return merged;
+  },
+
+  getFieldUpstream: (nodeId, fieldName) => {
+    const state = get();
+    const result: Array<{
+      node: DataNode;
+      field: string;
+      transform?: string;
+      viaNode?: string;
+    }> = [];
+    const visited = new Set<string>();
+    const queue: Array<{ nid: string; field: string }> = [
+      { nid: nodeId, field: fieldName },
+    ];
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const inEdges = state.edges.filter(
+        (e) =>
+          e.target === current.nid &&
+          (e.targetField === current.field || !e.targetField)
+      );
+
+      for (const edge of inEdges) {
+        if (!edge.sourceField) continue;
+        const key = `${edge.source}:${edge.sourceField}`;
+        if (visited.has(key)) continue;
+        visited.add(key);
+
+        const sourceNode = state.nodes.find((n) => n.id === edge.source);
+        if (!sourceNode) continue;
+
+        result.push({
+          node: sourceNode,
+          field: edge.sourceField,
+          transform: edge.transformLogic,
+        });
+        queue.push({ nid: sourceNode.id, field: edge.sourceField });
+      }
+
+      if (!current.field) continue;
+      const genericIn = state.edges.filter(
+        (e) => e.target === current.nid && !e.targetField
+      );
+      for (const edge of genericIn) {
+        const sNode = state.nodes.find((n) => n.id === edge.source);
+        if (!sNode) continue;
+        if (sNode.fields && sNode.fields.length > 0) {
+          const matchedFields = sNode.fields.filter(
+            (f) =>
+              f.name.toLowerCase().includes(current.field.toLowerCase()) ||
+              (f.description &&
+                f.description.toLowerCase().includes(current.field.toLowerCase()))
+          );
+          for (const mf of matchedFields) {
+            const key = `${sNode.id}:${mf.name}`;
+            if (visited.has(key)) continue;
+            visited.add(key);
+            result.push({
+              node: sNode,
+              field: mf.name,
+              transform:
+                edge.transformLogic ||
+                (current.field !== mf.name ? '字段名模糊匹配' : undefined),
+              viaNode: current.nid,
+            });
+            queue.push({ nid: sNode.id, field: mf.name });
+          }
+        }
+      }
+    }
+    return result;
   },
 
   addTask: (task) => {
@@ -514,6 +818,7 @@ export const useLineageStore = create<LineageState>((set, get) => ({
         selectedField: null,
         focusedNodeId: null,
         searchQuery: '',
+        pendingTaskFormData: null,
       };
       saveToStorage(next);
       return next;
